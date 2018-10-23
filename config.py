@@ -29,23 +29,23 @@ else:
 steps_per_epoch = total_img * (1 - validation_split_ratio) // batch_size
 validation_steps = total_img * validation_split_ratio // batch_size
 
-data_dir = '/home/adam/.keras/datasets/text_detection/ICPR'
-origin_image_dir_name = 'image_10000/'
-origin_txt_dir_name = 'txt_10000/'
-train_image_dir_name = 'images_%s/' % train_task_id
-train_label_dir_name = 'labels_%s/' % train_task_id
-show_gt_image_dir_name = 'show_gt_images_%s/' % train_task_id
-show_act_image_dir_name = 'show_act_images_%s/' % train_task_id
-gen_origin_img = True
-draw_gt_quad = True
+DATASET_DIR = '/home/adam/.keras/datasets/text_detection/ICPR'
+ORIGIN_IMAGE_DIR_NAME = 'image_10000'
+ORIGIN_LABEL_DIR_NAME = 'txt_10000'
+CURRENT_IMAGE_DIR_NAME = 'images_%s' % train_task_id
+CURRENT_LABEL_DIR_NAME = 'labels_%s' % train_task_id
+DRAW_GT_QUAD_IMAGE_DIR_NAME = 'draw_gt_quad_images_%s' % train_task_id
+DRAW_ACT_IMAGE_DIR_NAME = 'draw_act_images_%s' % train_task_id
+SAVE_RESIZED_IMAGE = True
+DRAW_GT_QUAD = True
 draw_act_quad = True
-val_fname = 'val_%s.txt' % train_task_id
-train_fname = 'train_%s.txt' % train_task_id
+VAL_FILENAME = 'val_%s.txt' % train_task_id
+TRAIN_FILENAME = 'train_%s.txt' % train_task_id
 # in paper it's 0.3, maybe too large to this problem
-shrink_ratio = 0.2
+SHRINK_RATIO = 0.2
 # pixels between 0.2 and 0.6 are side pixels
-shrink_side_ratio = 0.6
-epsilon = 1e-4
+SHRINK_SIDE_RATIO = 0.6
+EPSILON = 1e-7
 
 num_channels = 3
 feature_layers_range = range(5, 1, -1)
@@ -71,3 +71,7 @@ side_vertex_pixel_threshold = 0.9
 trunc_threshold = 0.1
 predict_cut_text_line = False
 predict_write2txt = True
+
+IMAGE_RESIZE_MODE = "square"
+IMAGE_MIN_DIM = 800
+IMAGE_MAX_DIM = 1024

@@ -2,7 +2,7 @@ import numpy as np
 import os
 from PIL import Image, ImageDraw
 from tqdm import tqdm
-import cfg
+import config
 
 
 def point_inside_of_quad(px, py, quad_xy_list, p_min, p_max):
@@ -43,7 +43,13 @@ def point_inside_of_nth_quad(px, py, xy_list, shrink_1, long_edge):
     return nth
 
 
-def shrink(xy_list, shrink_ratio=cfg.shrink_ratio):
+def shrink(xy_list, shrink_ratio=config.SHRINK_RATIO):
+    """
+    把 gt_quad(ground-truth quadrangle) 按照一定比例收缩
+    :param xy_list: gt_quad 的四个点坐标, 是从左上角的点开始按逆时针旋转得到的四个点的坐标, shape 为 (4,2)
+    :param shrink_ratio: 收缩比例
+    :return:
+    """
     if shrink_ratio == 0.0:
         return xy_list, xy_list
     # [[x0 - x1, y0 - y1], [x1 - x2, y1 - y2], [x2 - x3, y2 - y3]]
@@ -54,61 +60,76 @@ def shrink(xy_list, shrink_ratio=cfg.shrink_ratio):
     diff = np.concatenate((diff_1to3, diff_4), axis=0)
     # [sqrt((x0 - x1)^2 + (y0 - y1)^2), sqrt((x1 - x2)^2+(y1 - y2)^2),
     # sqrt((x2 - x3)^2+(y2 - y3)^2),sqrt((x3 - x0)^2+(y3 - y0)^2)]
-    dis = np.sqrt(np.sum(np.square(diff), axis=-1))
+    # 分别表示 [d01, d12, d23, d30]
+    distances = np.sqrt(np.sum(np.square(diff), axis=-1))
     # determine which are long or short edges
-    # np.argmax([d01 + d23, d12 + d34])
-    first_long_edge_idx = np.argmax(np.sum(np.reshape(dis, (2, 2)), axis=0))
+    # np.argmax([d01 + d23, d12 + d34]), 所有取值为 0 或者 1
+    first_long_edge_idx = np.argmax(np.sum(np.reshape(distances, (2, 2)), axis=0))
+    # 取值为 1 或者 0
     first_short_edge_idx = 1 - first_long_edge_idx
     second_long_edge_idx = first_long_edge_idx + 2
     second_short_edge_idx = first_short_edge_idx + 2
-    # cal r length array
+    # cal renference lengths array, refer to paper
+    # 每一个元素表示该位置的顶点连接的较短的那条边的长度
     # [min(d01,d30),min(d12,d01),min(d23,d12),min(d30,d23)]
-    r = [np.minimum(dis[i], dis[(i - 1) % 4]) for i in range(4)]
+    r = [np.minimum(distances[i], distances[(i - 1) % 4]) for i in range(4)]
     # cal theta array
     diff_abs = np.abs(diff)
-    diff_abs[:, 0] += cfg.epsilon
+    diff_abs[:, 0] += config.EPSILON
     # np.arctan() 是 tan() 的反操作,y = tan(x) 那么 x = argtan(y)
     # 同理 |delta_y/delta_x| = tan(theta), theta = arctan(|delta_y/delta_x|)
     # [arctan(|y0-y1/x0-x1|),arctan(|y1-y2/x1-x2|),arctan(|y2-y3/x2-x3|),arctan(|y3-y0/x3-x0|)|
-    theta = np.arctan(diff_abs[:, 1] / diff_abs[:, 0])
+    # thetas 表示每条边的斜率角度, shape 为 (4,)
+    thetas = np.arctan(diff_abs[:, 1] / diff_abs[:, 0])
     # shrink two long edges
     temp_new_xy_list = np.copy(xy_list)
-    shrink_edge(xy_list, temp_new_xy_list, first_long_edge_idx, r, theta, shrink_ratio)
-    shrink_edge(xy_list, temp_new_xy_list, second_long_edge_idx, r, theta, shrink_ratio)
+    shrink_edge(xy_list, temp_new_xy_list, first_long_edge_idx, r, thetas, shrink_ratio)
+    shrink_edge(xy_list, temp_new_xy_list, second_long_edge_idx, r, thetas, shrink_ratio)
     # shrink two short edges
     new_xy_list = np.copy(temp_new_xy_list)
-    shrink_edge(temp_new_xy_list, new_xy_list, first_short_edge_idx, r, theta, shrink_ratio)
-    shrink_edge(temp_new_xy_list, new_xy_list, second_short_edge_idx, r, theta, shrink_ratio)
+    shrink_edge(temp_new_xy_list, new_xy_list, first_short_edge_idx, r, thetas, shrink_ratio)
+    shrink_edge(temp_new_xy_list, new_xy_list, second_short_edge_idx, r, thetas, shrink_ratio)
     return temp_new_xy_list, new_xy_list, first_long_edge_idx
 
 
-def shrink_edge(xy_list, new_xy_list, edge, r, theta, shrink_ratio=cfg.shrink_ratio):
+def shrink_edge(xy_list, new_xy_list, edge_idx, r, theta, shrink_ratio=config.SHRINK_RATIO):
+    """
+    收缩某条边
+    :param xy_list: 收缩前的坐标, shape 为 (4,2)
+    :param new_xy_list: 收缩后的坐标, shape 为 (4,2)
+    :param edge_idx: 边的 index, int
+    :param r: reference lengths, shape 为 (4,)
+    :param theta: 每条边的斜率角度, shape 为 (4,)
+    :param shrink_ratio: 收缩比例
+    :return: None, 只是对 new_xy_list 中的值作更改
+    """
     if shrink_ratio == 0.0:
         return
-    start_point = edge
-    end_point = (edge + 1) % 4
-    long_start_sign_x = np.sign(
-        xy_list[end_point, 0] - xy_list[start_point, 0])
-    new_xy_list[start_point, 0] = \
-        xy_list[start_point, 0] + \
-        long_start_sign_x * shrink_ratio * r[start_point] * np.cos(theta[start_point])
-    long_start_sign_y = np.sign(
-        xy_list[end_point, 1] - xy_list[start_point, 1])
-    new_xy_list[start_point, 1] = \
-        xy_list[start_point, 1] + \
-        long_start_sign_y * shrink_ratio * r[start_point] * np.sin(theta[start_point])
-    # long edge one, end point
-    long_end_sign_x = -1 * long_start_sign_x
-    new_xy_list[end_point, 0] = \
-        xy_list[end_point, 0] + \
-        long_end_sign_x * shrink_ratio * r[end_point] * np.cos(theta[start_point])
-    long_end_sign_y = -1 * long_start_sign_y
-    new_xy_list[end_point, 1] = \
-        xy_list[end_point, 1] + \
-        long_end_sign_y * shrink_ratio * r[end_point] * np.sin(theta[start_point])
+    start_vertex_idx = edge_idx
+    end_vertex_idx = (edge_idx + 1) % 4
+    # vertex_idx=0 delta_x_sign = -1
+    #           ________
+    #          /       /
+    #         /       /
+    #        /_______/
+    # vertex_idx=0 delta_x_sign == 1
+    #      _________
+    #      \        \
+    #       \        \
+    #        \________\
+    # 计算收缩后的 start_vertex_idx 的点的坐标
+    delta_x_sign = np.sign(xy_list[end_vertex_idx, 0] - xy_list[start_vertex_idx, 0])
+    new_xy_list[start_vertex_idx, 0] += delta_x_sign * shrink_ratio * r[start_vertex_idx] * np.cos(theta[edge_idx])
+    delta_y_sign = np.sign(xy_list[end_vertex_idx, 1] - xy_list[start_vertex_idx, 1])
+    new_xy_list[start_vertex_idx, 1] += delta_y_sign * shrink_ratio * r[start_vertex_idx] * np.sin(theta[edge_idx])
+    # 计算收缩后的 end_vertex_idx 的点的坐标
+    delta_x_sign = -1 * delta_x_sign
+    new_xy_list[end_vertex_idx, 0] += delta_x_sign * shrink_ratio * r[end_vertex_idx] * np.cos(theta[edge_idx])
+    delta_y_sign = -1 * delta_y_sign
+    new_xy_list[end_vertex_idx, 1] += delta_y_sign * shrink_ratio * r[end_vertex_idx] * np.sin(theta[edge_idx])
 
 
-def process_label(data_dir=cfg.data_dir):
+def process_label(data_dir=config.DATASET_DIR):
     with open(os.path.join(data_dir, cfg.val_fname), 'r') as f_val:
         f_list = f_val.readlines()
     with open(os.path.join(data_dir, cfg.train_fname), 'r') as f_train:
