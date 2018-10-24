@@ -28,7 +28,7 @@ def point_inside_of_quad(px, py, quad_xy_list, p_min, p_max):
         return False
 
 
-def point_inside_of_nth_quad(px, py, xy_list, shrink_1, long_edge):
+def point_inside_of_nth_quad(px, py, xy_list, shrink_1ong_edges_, long_edge):
     nth = -1
     vs = [[[0, 0, 3, 3, 0], [1, 1, 2, 2, 1]],
           [[0, 0, 1, 1, 0], [2, 2, 3, 3, 2]]]
@@ -151,12 +151,16 @@ def process_label(dataset_dir=config.DATASET_DIR):
             draw = ImageDraw.Draw(im)
             for xy_list in xy_list_array:
                 _, shrink_xy_list, _ = shrink(xy_list, config.SHRINK_RATIO)
-                shrink_1, _, long_edge = shrink(xy_list, config.SHRINK_SIDE_RATIO)
+                shrink_long_edges_xy_list, _, first_long_edge_idx = shrink(xy_list, config.SHRINK_SIDE_RATIO)
                 # shape 为　(2,), 第一个元素为 min_x, 第二个元素为　min_y
                 float_min_xy = np.amin(shrink_xy_list, axis=0)
                 # shape 为　(2,), 第一个元素为 max_x, 第二个元素为　max_y
                 float_max_xy = np.amax(shrink_xy_list, axis=0)
                 # floor of the float
+                # 举例 float_min_x == 197.2 那么 int_min_x = 49, 表示在第 49 个矩形框中, 第 49 个矩形框的 center_x=49*4+2=198
+                # 198 > 197.2 所以认为这个矩形框就是在四边形内
+                # 同理如果 float_max_x == 197.2, 那么 int_max_x = 50, range 中最大能访问到 49, 第 49 个矩形框的 center_x=198
+                # 198 > 197.2 所以认为这个矩形框不在四边形内
                 int_min_xy = np.floor(float_min_xy / config.PIXEL_SIZE).astype('int')
                 # ceil of the float
                 int_max_xy = np.ceil(float_max_xy / config.PIXEL_SIZE).astype('int')
@@ -166,12 +170,19 @@ def process_label(dataset_dir=config.DATASET_DIR):
                 int_max_x = np.minimum(width // config.PIXEL_SIZE, int_max_xy[0])
                 for y in range(int_min_y, int_max_y):
                     for x in range(int_min_x, int_max_x):
-                        px = x * config.PIXEL_SIZE
-                        py = y * config.PIXEL_SIZE
-                        if point_inside_of_quad(px, py, shrink_xy_list, float_min_xy, float_max_xy):
+                        # -------
+                        #|---x---|
+                        # -------
+                        # PIXEL_SIZE * PIXEL_SIZE 矩形框中心点的坐标
+                        center_x = (x + 0.5) * config.PIXEL_SIZE
+                        center_y = (y + 0.5) * config.PIXEL_SIZE
+                        # 判断中心点是否在四边形中
+                        if point_inside_of_quad(center_x, center_y, shrink_xy_list, float_min_xy, float_max_xy):
+                            # 如果在,设置与矩形框对应的 gt 为 1
                             gt[y, x, 0] = 1
                             line_width, line_color = 1, 'red'
-                            ith = point_inside_of_nth_quad(px, py, xy_list, shrink_1, long_edge)
+                            # 判断中心点是否在收缩矩形框的两端
+                            ith = point_inside_of_nth_quad(center_x, center_y, xy_list, shrink_long_edges_xy_list, first_long_edge_idx)
                             vs = [[[3, 0], [1, 2]], [[0, 1], [2, 3]]]
                             if ith in range(2):
                                 gt[y, x, 1] = 1
@@ -180,10 +191,8 @@ def process_label(dataset_dir=config.DATASET_DIR):
                                 else:
                                     line_width, line_color = 2, 'green'
                                 gt[y, x, 2:3] = ith
-                                gt[y, x, 3:5] = \
-                                    xy_list[vs[long_edge][ith][0]] - [px, py]
-                                gt[y, x, 5:] = \
-                                    xy_list[vs[long_edge][ith][1]] - [px, py]
+                                gt[y, x, 3:5] = xy_list[vs[long_edge][ith][0]] - [center_x, center_y]
+                                gt[y, x, 5:] = xy_list[vs[long_edge][ith][1]] - [center_x, center_y]
                             draw.line([(px - 0.5 * config.pixel_size,
                                         py - 0.5 * config.pixel_size),
                                        (px + 0.5 * config.pixel_size,
