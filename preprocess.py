@@ -17,11 +17,11 @@ sh.setFormatter(format)
 logger.addHandler(sh)
 
 
-def batch_reorder_vertexes(xy_list_array):
-    reorder_xy_list_array = np.zeros_like(xy_list_array)
+def batch_sort_xylist(xy_list_array):
+    sorted_xy_list_array = np.zeros_like(xy_list_array)
     for xy_list, i in zip(xy_list_array, range(len(xy_list_array))):
-        reorder_xy_list_array[i] = reorder_vertexes(xy_list)
-    return reorder_xy_list_array
+        sorted_xy_list_array[i] = sort_xylist(xy_list)
+    return sorted_xy_list_array
 
 
 def sort_xylist(xy_list):
@@ -372,7 +372,7 @@ def preprocess():
     print('Found {} current labels.'.format(num_current_labels))
 
     random.shuffle(train_val_set)
-    val_count = int(config.validation_split_ratio * len(train_val_set))
+    val_count = int(config.VALIDATION_SPLIT_RATIO * len(train_val_set))
     with open(os.path.join(dataset_dir, config.VAL_FILENAME), 'w') as val_file:
         val_file.writelines(train_val_set[:val_count])
     with open(os.path.join(dataset_dir, config.TRAIN_FILENAME), 'w') as train_file:

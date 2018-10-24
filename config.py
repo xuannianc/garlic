@@ -13,7 +13,7 @@ lambda_side_vertex_code_loss = 1.0
 lambda_side_vertex_coord_loss = 1.0
 
 total_img = 10000
-validation_split_ratio = 0.1
+VALIDATION_SPLIT_RATIO = 0.1
 max_train_img_size = int(train_task_id[-3:])
 max_predict_img_size = int(train_task_id[-3:])  # 2400
 assert max_train_img_size in [256, 384, 512, 640, 736], \
@@ -26,8 +26,8 @@ elif max_train_img_size == 512:
     batch_size = 2
 else:
     batch_size = 1
-steps_per_epoch = total_img * (1 - validation_split_ratio) // batch_size
-validation_steps = total_img * validation_split_ratio // batch_size
+steps_per_epoch = total_img * (1 - VALIDATION_SPLIT_RATIO) // batch_size
+validation_steps = total_img * VALIDATION_SPLIT_RATIO // batch_size
 
 DATASET_DIR = '/home/adam/.keras/datasets/text_detection/ICPR'
 ORIGIN_IMAGE_DIR_NAME = 'image_10000'
@@ -52,7 +52,7 @@ feature_layers_range = range(5, 1, -1)
 # feature_layers_range = range(3, 0, -1)
 feature_layers_num = len(feature_layers_range)
 # pixel_size = 4
-pixel_size = 2 ** feature_layers_range[-1]
+PIXEL_SIZE = 2 ** feature_layers_range[-1]
 locked_layers = False
 
 if not os.path.exists('model'):

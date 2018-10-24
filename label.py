@@ -8,12 +8,18 @@ import config
 def point_inside_of_quad(px, py, quad_xy_list, p_min, p_max):
     if (p_min[0] <= px <= p_max[0]) and (p_min[1] <= py <= p_max[1]):
         xy_list = np.zeros((4, 2))
+        # array([[x1-x0,y1-y0],[x2-x1,y2-y1],[x3-x2,y3-y2],[0,0]]
         xy_list[:3, :] = quad_xy_list[1:4, :] - quad_xy_list[:3, :]
+        # array([[x1-x0,y1-y0],[x2-x1,y2-y1],[x3-x2,y3-y2],[x0-x3,y0-y3]])
         xy_list[3] = quad_xy_list[0, :] - quad_xy_list[3, :]
         yx_list = np.zeros((4, 2))
+        # array([[y0,x0],[y1,x1],[y2,x2],[y3,x3]])
         yx_list[:, :] = quad_xy_list[:, -1:-3:-1]
+        # array([[(x1-x0)*(py-y0),(y1-y0)*(px-x0)],[(x2-x1)*(py-y1),(y2-y1)*(px-x1)]...)
         a = xy_list * ([py, px] - yx_list)
+        # array([(x1-x0)*(py-y0)-(y1-y0)*(px-x0),(x2-x1)*(py-y1)-(y2-y1)*(px-x1)]...)
         b = a[:, 0] - a[:, 1]
+        # 非常神奇
         if np.amin(b) >= 0 or np.amax(b) <= 0:
             return True
         else:
@@ -129,78 +135,71 @@ def shrink_edge(xy_list, new_xy_list, edge_idx, r, theta, shrink_ratio=config.SH
     new_xy_list[end_vertex_idx, 1] += delta_y_sign * shrink_ratio * r[end_vertex_idx] * np.sin(theta[edge_idx])
 
 
-def process_label(data_dir=config.DATASET_DIR):
-    with open(os.path.join(data_dir, cfg.val_fname), 'r') as f_val:
-        f_list = f_val.readlines()
-    with open(os.path.join(data_dir, cfg.train_fname), 'r') as f_train:
-        f_list.extend(f_train.readlines())
-    for line, _ in zip(f_list, tqdm(range(len(f_list)))):
+def process_label(dataset_dir=config.DATASET_DIR):
+    with open(os.path.join(dataset_dir, config.VAL_FILENAME), 'r') as val_file:
+        data_lines = val_file.readlines()
+    with open(os.path.join(dataset_dir, config.TRAIN_FILENAME), 'r') as train_file:
+        data_lines.extend(train_file.readlines())
+    for line, _ in zip(data_lines, tqdm(range(len(data_lines)))):
         line_cols = str(line).strip().split(',')
-        img_name, width, height = \
-            line_cols[0].strip(), int(line_cols[1].strip()), \
-            int(line_cols[2].strip())
-        gt = np.zeros((height // cfg.pixel_size, width // cfg.pixel_size, 7))
-        train_label_dir = os.path.join(data_dir, cfg.train_label_dir_name)
-        xy_list_array = np.load(os.path.join(train_label_dir,
-                                             img_name[:-4] + '.npy'))
-        train_image_dir = os.path.join(data_dir, cfg.train_image_dir_name)
+        img_name, width, height = line_cols[0].strip(), int(line_cols[1].strip()), int(line_cols[2].strip())
+        gt = np.zeros((height // config.pixel_size, width // config.pixel_size, 7))
+        train_label_dir = os.path.join(dataset_dir, config.train_label_dir_name)
+        xy_list_array = np.load(os.path.join(train_label_dir, img_name[:-4] + '.npy'))
+        train_image_dir = os.path.join(dataset_dir, config.train_image_dir_name)
         with Image.open(os.path.join(train_image_dir, img_name)) as im:
             draw = ImageDraw.Draw(im)
             for xy_list in xy_list_array:
-                _, shrink_xy_list, _ = shrink(xy_list, cfg.shrink_ratio)
-                shrink_1, _, long_edge = shrink(xy_list, cfg.shrink_side_ratio)
-                p_min = np.amin(shrink_xy_list, axis=0)
-                p_max = np.amax(shrink_xy_list, axis=0)
+                _, shrink_xy_list, _ = shrink(xy_list, config.SHRINK_RATIO)
+                shrink_1, _, long_edge = shrink(xy_list, config.SHRINK_SIDE_RATIO)
+                # shape 为　(2,), 第一个元素为 min_x, 第二个元素为　min_y
+                float_min_xy = np.amin(shrink_xy_list, axis=0)
+                # shape 为　(2,), 第一个元素为 max_x, 第二个元素为　max_y
+                float_max_xy = np.amax(shrink_xy_list, axis=0)
                 # floor of the float
-                ji_min = (p_min / cfg.pixel_size - 0.5).astype(int) - 1
-                # +1 for ceil of the float and +1 for include the end
-                ji_max = (p_max / cfg.pixel_size - 0.5).astype(int) + 3
-                imin = np.maximum(0, ji_min[1])
-                imax = np.minimum(height // cfg.pixel_size, ji_max[1])
-                jmin = np.maximum(0, ji_min[0])
-                jmax = np.minimum(width // cfg.pixel_size, ji_max[0])
-                for i in range(imin, imax):
-                    for j in range(jmin, jmax):
-                        px = (j + 0.5) * cfg.pixel_size
-                        py = (i + 0.5) * cfg.pixel_size
-                        if point_inside_of_quad(px, py,
-                                                shrink_xy_list, p_min, p_max):
-                            gt[i, j, 0] = 1
+                int_min_xy = np.floor(float_min_xy / config.PIXEL_SIZE).astype('int')
+                # ceil of the float
+                int_max_xy = np.ceil(float_max_xy / config.PIXEL_SIZE).astype('int')
+                int_min_y = np.maximum(0, int_min_xy[1])
+                int_max_y = np.minimum(height // config.PIXEL_SIZE, int_max_xy[1])
+                int_min_x = np.maximum(0, int_min_xy[0])
+                int_max_x = np.minimum(width // config.PIXEL_SIZE, int_max_xy[0])
+                for y in range(int_min_y, int_max_y):
+                    for x in range(int_min_x, int_max_x):
+                        px = x * config.PIXEL_SIZE
+                        py = y * config.PIXEL_SIZE
+                        if point_inside_of_quad(px, py, shrink_xy_list, float_min_xy, float_max_xy):
+                            gt[y, x, 0] = 1
                             line_width, line_color = 1, 'red'
-                            ith = point_inside_of_nth_quad(px, py,
-                                                           xy_list,
-                                                           shrink_1,
-                                                           long_edge)
+                            ith = point_inside_of_nth_quad(px, py, xy_list, shrink_1, long_edge)
                             vs = [[[3, 0], [1, 2]], [[0, 1], [2, 3]]]
                             if ith in range(2):
-                                gt[i, j, 1] = 1
+                                gt[y, x, 1] = 1
                                 if ith == 0:
                                     line_width, line_color = 2, 'yellow'
                                 else:
                                     line_width, line_color = 2, 'green'
-                                gt[i, j, 2:3] = ith
-                                gt[i, j, 3:5] = \
+                                gt[y, x, 2:3] = ith
+                                gt[y, x, 3:5] = \
                                     xy_list[vs[long_edge][ith][0]] - [px, py]
-                                gt[i, j, 5:] = \
+                                gt[y, x, 5:] = \
                                     xy_list[vs[long_edge][ith][1]] - [px, py]
-                            draw.line([(px - 0.5 * cfg.pixel_size,
-                                        py - 0.5 * cfg.pixel_size),
-                                       (px + 0.5 * cfg.pixel_size,
-                                        py - 0.5 * cfg.pixel_size),
-                                       (px + 0.5 * cfg.pixel_size,
-                                        py + 0.5 * cfg.pixel_size),
-                                       (px - 0.5 * cfg.pixel_size,
-                                        py + 0.5 * cfg.pixel_size),
-                                       (px - 0.5 * cfg.pixel_size,
-                                        py - 0.5 * cfg.pixel_size)],
+                            draw.line([(px - 0.5 * config.pixel_size,
+                                        py - 0.5 * config.pixel_size),
+                                       (px + 0.5 * config.pixel_size,
+                                        py - 0.5 * config.pixel_size),
+                                       (px + 0.5 * config.pixel_size,
+                                        py + 0.5 * config.pixel_size),
+                                       (px - 0.5 * config.pixel_size,
+                                        py + 0.5 * config.pixel_size),
+                                       (px - 0.5 * config.pixel_size,
+                                        py - 0.5 * config.pixel_size)],
                                       width=line_width, fill=line_color)
-            act_image_dir = os.path.join(cfg.data_dir,
-                                         cfg.show_act_image_dir_name)
-            if cfg.draw_act_quad:
+            act_image_dir = os.path.join(config.data_dir, config.show_act_image_dir_name)
+            if config.draw_act_quad:
                 im.save(os.path.join(act_image_dir, img_name))
-        train_label_dir = os.path.join(data_dir, cfg.train_label_dir_name)
-        np.save(os.path.join(train_label_dir,
-                             img_name[:-4] + '_gt.npy'), gt)
+        train_label_dir = os.path.join(dataset_dir, config.train_label_dir_name)
+        np.save(os.path.join(train_label_dir, img_name[:-4] + '_gt.npy'), gt)
 
 
 if __name__ == '__main__':
