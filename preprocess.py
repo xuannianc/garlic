@@ -8,6 +8,7 @@ import logging
 import sys
 import cv2
 import os.path as osp
+import shutil
 
 logger = logging.getLogger('preprocess')
 logger.setLevel(logging.DEBUG)  # default log level
@@ -35,30 +36,31 @@ def sort_xylist(xy_list):
     :param xy_list: shape 为 (4, 2) 的数组,ICPR 的数据集中依次存放左下方的点和按逆时针方向的其他三个点
     :return:
     """
-    # reorder_xy_list 的 shape 为 (4, 2)
-    reorder_xy_list = np.zeros_like(xy_list)
-    ############################### 找最小 x 的点,其下标复制给 first_v ########################################
+    # sorted_xy_list 的 shape 为 (4, 2)
+    sorted_xy_list = np.zeros_like(xy_list)
+    first_vertex_idx, second_vertex_idx, third_vertex_idx, fourth_vertex_idx = None, None, None, None
+    ############################### 找最小 x 的点,其下标复制给 first_vertex_idx ########################################
     # determine the first point with the smallest x,
     # if two has same x, choose that with smallest y,
     # 四个点的坐标按 x 进行排序, 如果 x 相等, 按 y 排序
     # np.argsort 返回结果的 shape 和原来一样, 每个元素的值表示该位置对应的原数组中的元素的序号
     # 参见 https://docs.scipy.org/doc/numpy-1.15.1/reference/generated/numpy.argsort.html
-    ordered_idxes = np.argsort(xy_list, axis=0)
+    sorted_idxes = np.argsort(xy_list, axis=0)
     # 有最小 x 的元素在原数组中的序号
-    xmin1_idx = ordered_idxes[0, 0]
+    xmin1_idx = sorted_idxes[0, 0]
     # 有倒数第二小的 x 的元素在原数组的序号
-    xmin2_idx = ordered_idxes[1, 0]
+    xmin2_idx = sorted_idxes[1, 0]
     # 如果最小的两个 x 相等, 比较 y
     if xy_list[xmin1_idx, 0] == xy_list[xmin2_idx, 0]:
         if xy_list[xmin1_idx, 1] <= xy_list[xmin2_idx, 1]:
-            reorder_xy_list[0] = xy_list[xmin1_idx]
+            sorted_xy_list[0] = xy_list[xmin1_idx]
             first_vertex_idx = xmin1_idx
         else:
-            reorder_xy_list[0] = xy_list[xmin2_idx]
+            sorted_xy_list[0] = xy_list[xmin2_idx]
             first_vertex_idx = xmin2_idx
     else:
-        # 把有最小 x 的元素放在  reorder_xy_list 的下标 0 的位置
-        reorder_xy_list[0] = xy_list[xmin1_idx]
+        # 把有最小 x 的元素放在  sorted_xy_list 的下标 0 的位置
+        sorted_xy_list[0] = xy_list[xmin1_idx]
         first_vertex_idx = xmin1_idx
     ##################################### 找到第一个顶点的对角线的点　############################################
     # connect the first point to the third point on the other side of
@@ -70,11 +72,16 @@ def sort_xylist(xy_list):
     for i, other_vertex_idx in enumerate(other_vertex_idxes):
         k[i] = (xy_list[other_vertex_idx, 1] - xy_list[first_vertex_idx, 1]) \
                / (xy_list[other_vertex_idx, 0] - xy_list[first_vertex_idx, 0] + config.EPSILON)
+    # 防止在同一条直线
+    if k[0] == k[1] and k[0] == k[2]:
+        logger.warning('{} is invalid'.format(xy_list))
+        return np.zeros_like(xy_list)
     # ｋ_mid_idx 是三个斜率的中间值的下标
     k_mid_idx = np.argsort(k)[1]
+    # 中间值斜率
     k_mid = k[k_mid_idx]
     third_vertex_idx = other_vertex_idxes[k_mid_idx]
-    reorder_xy_list[2] = xy_list[third_vertex_idx]
+    sorted_xy_list[2] = xy_list[third_vertex_idx]
     ##################################### 找到其他两个点 ##################################################
     # determine the second point which on the bigger side of the middle line
     other_vertex_idxes.remove(third_vertex_idx)
@@ -89,35 +96,34 @@ def sort_xylist(xy_list):
             second_vertex_idx = other_vertex_idx
         else:
             fourth_vertex_idx = other_vertex_idx
-    reorder_xy_list[1] = xy_list[second_vertex_idx]
-    reorder_xy_list[3] = xy_list[fourth_vertex_idx]
+    if second_vertex_idx is None:
+        logger.warning('Cannot find second_vertex_idx')
+        return np.zeros_like(xy_list)
+    if fourth_vertex_idx is None:
+        logger.warning('Cannot find second_vertex_idx')
+        return np.zeros_like(xy_list)
+    sorted_xy_list[1] = xy_list[second_vertex_idx]
+    sorted_xy_list[3] = xy_list[fourth_vertex_idx]
     ############################### 把左上方的点作为第一个点,按逆时针得到其他点　######################################
     # compare slope of 13 and 24, determine the final order
     k13 = k_mid
     k24 = (xy_list[second_vertex_idx, 1] - xy_list[fourth_vertex_idx, 1]) / (
             xy_list[second_vertex_idx, 0] - xy_list[fourth_vertex_idx, 0] + config.EPSILON)
     if k13 < k24:
-        tmp_x, tmp_y = reorder_xy_list[3, 0], reorder_xy_list[3, 1]
-        for i in range(2, -1, -1):
-            reorder_xy_list[i + 1] = reorder_xy_list[i]
-        reorder_xy_list[0, 0], reorder_xy_list[0, 1] = tmp_x, tmp_y
-    return reorder_xy_list
-
-
-# def resize_image(im, max_img_size=cfg.max_train_img_size):
-#     im_width = np.minimum(im.width, max_img_size)
-#     if im_width == max_img_size < im.width:
-#         im_height = int((im_width / im.width) * im.height)
-#     else:
-#         im_height = im.height
-#     o_height = np.minimum(im_height, max_img_size)
-#     if o_height == max_img_size < im_height:
-#         o_width = int((o_height / im_height) * im_width)
-#     else:
-#         o_width = im_width
-#     d_wight = o_width - (o_width % 32)
-#     d_height = o_height - (o_height % 32)
-#     return d_wight, d_height
+        # 4_________3
+        # /        /
+        #/________/
+        #1         2
+        tmp_x, tmp_y = sorted_xy_list[0, 0], sorted_xy_list[0, 1]
+        #
+        for i in range(0, 2):
+            sorted_xy_list[i] = sorted_xy_list[i + 1]
+        sorted_xy_list[3, 0], sorted_xy_list[3, 1] = tmp_x, tmp_y
+        # 1_________4
+        # /        /
+        #/________/
+        #2         3
+    return sorted_xy_list
 
 
 def resize_image(image, min_dim=None, max_dim=None, min_scale=None, mode="square"):
@@ -188,7 +194,7 @@ def resize_image(image, min_dim=None, max_dim=None, min_scale=None, mode="square
     # NOTE: round 四舍六入, 等于 5 时取就近的偶数, 默认不保留小数位,直接转成 int
     if scale != 1:
         # image = resize(image, (round(h * scale), round(w * scale)), preserve_range=True)
-        image = cv2.resize(image, ((round(w * scale), round(h * scale))), interpolation=cv2.INTER_LINEAR)
+        image = cv2.resize(image, (round(w * scale), round(h * scale)), interpolation=cv2.INTER_LINEAR)
         # Get new height and width
         h, w = image.shape[:2]
 
@@ -240,38 +246,43 @@ def preprocess():
     dataset_dir = config.DATASET_DIR
     # 存放原来的图片
     origin_image_dir = os.path.join(dataset_dir, config.ORIGIN_IMAGE_DIR_NAME)
-    # 存放原来的标注
+    # 存放原来的 txt 标注
     origin_label_dir = os.path.join(dataset_dir, config.ORIGIN_LABEL_DIR_NAME)
     # 存放 resize 后的图片
-    current_image_dir = os.path.join(dataset_dir, config.CURRENT_IMAGE_DIR_NAME)
+    resized_image_dir = os.path.join(dataset_dir, config.RESIZED_IMAGE_DIR_NAME)
     # 存放 resize 后的标注
-    current_label_dir = os.path.join(dataset_dir, config.CURRENT_LABEL_DIR_NAME)
-    if not os.path.exists(current_image_dir):
-        os.mkdir(current_image_dir)
-    if not os.path.exists(current_label_dir):
-        os.mkdir(current_label_dir)
+    resized_label_dir = os.path.join(dataset_dir, config.RESIZED_LABEL_DIR_NAME)
+    # 存放画有 gt quad 的 resized_image
     draw_gt_quad_image_dir = os.path.join(dataset_dir, config.DRAW_GT_QUAD_IMAGE_DIR_NAME)
-    if not os.path.exists(draw_gt_quad_image_dir):
-        os.mkdir(draw_gt_quad_image_dir)
-
+    # 存放画有 act 的 resized_image
+    draw_act_image_dir = os.path.join(dataset_dir, config.DRAW_ACT_IMAGE_DIR_NAME)
+    # 存放用于训练的 image
+    train_image_dir = os.path.join(dataset_dir, config.TRAIN_IMAGE_DIR_NAME)
+    val_image_dir = os.path.join(dataset_dir, config.VAL_IMAGE_DIR_NAME)
+    for dir_path in [resized_image_dir, resized_label_dir, draw_gt_quad_image_dir, draw_act_image_dir, train_image_dir,
+                     val_image_dir]:
+        if not os.path.exists(dir_path):
+            os.mkdir(dir_path)
+        else:
+            shutil.rmtree(dir_path)
+            os.mkdir(dir_path)
     origin_image_filenames = os.listdir(origin_image_dir)
     num_origin_images = len(origin_image_filenames)
     logger.info('Found {} origin images.'.format(num_origin_images))
-    train_val_set = []
     for origin_image_filename, _ in zip(origin_image_filenames, tqdm(range(num_origin_images))):
         origin_image_filepath = os.path.join(origin_image_dir, origin_image_filename)
         logger.debug('Handling {} starts'.format(origin_image_filepath))
         origin_image = cv2.imread(origin_image_filepath)
-        cv2.namedWindow('origin_image', cv2.WINDOW_NORMAL)
-        cv2.imshow('origin_image', origin_image)
-        cv2.waitKey(0)
+        # cv2.namedWindow('origin_image', cv2.WINDOW_NORMAL)
+        # cv2.imshow('origin_image', origin_image)
+        # cv2.waitKey(0)
+        if origin_image is None:
+            logger.warning('Reading {} failed'.format(origin_image_filepath))
+            continue
         image, window, scale, padding, crop = resize_image(origin_image,
                                                            min_dim=config.IMAGE_MIN_DIM,
                                                            max_dim=config.IMAGE_MAX_DIM,
                                                            mode=config.IMAGE_RESIZE_MODE)
-        cv2.namedWindow('current_image', cv2.WINDOW_NORMAL)
-        cv2.imshow('current_image', image)
-        cv2.waitKey(0)
         origin_label_filename = origin_image_filename[:-4] + '.txt'
         origin_label_filepath = os.path.join(origin_label_dir, origin_label_filename)
         if osp.exists(origin_label_filepath):
@@ -299,8 +310,9 @@ def preprocess():
             _, shrink_xy_list, _ = shrink(xy_list, config.SHRINK_RATIO)
             shrink_long_edges_xy_list, _, first_long_edge_idx = shrink(xy_list, config.SHRINK_SIDE_RATIO)
             if config.DRAW_GT_QUAD:
-                cv2.polylines(draw_gt_quad_image, [xy_list.astype('int').reshape(-1, 1, 2)], True, (0, 255, 0), 1)
-                cv2.polylines(draw_gt_quad_image, [shrink_xy_list.astype('int').reshape(-1, 1, 2)], True, (255, 0, 0), 1)
+                cv2.polylines(draw_gt_quad_image, [xy_list.astype('int').reshape(-1, 1, 2)], True, (0, 255, 0), 2)
+                cv2.polylines(draw_gt_quad_image, [shrink_xy_list.astype('int').reshape(-1, 1, 2)], True, (255, 0, 0),
+                              2)
                 # 左右长上下短的情况
                 # ----------------
                 # |//////////////|
@@ -315,13 +327,13 @@ def preprocess():
                     # 上端阴影
                     cv2.polylines(draw_gt_quad_image,
                                   [np.array([xy_list[0], shrink_long_edges_xy_list[0], shrink_long_edges_xy_list[3],
-                                            xy_list[3]]).astype('int').reshape(-1, 1, 2)],
+                                             xy_list[3]]).astype('int').reshape(-1, 1, 2)],
                                   True,
                                   (255, 255, 0), 2)
                     # 下端阴影
                     cv2.polylines(draw_gt_quad_image,
                                   [np.array([shrink_long_edges_xy_list[1], xy_list[1], xy_list[2],
-                                            shrink_long_edges_xy_list[2]]).astype('int').reshape(-1, 1, 2)],
+                                             shrink_long_edges_xy_list[2]]).astype('int').reshape(-1, 1, 2)],
                                   True,
                                   (255, 255, 0), 2)
                 # 左右短上下长的情况
@@ -335,48 +347,54 @@ def preprocess():
                     # 左端阴影
                     cv2.polylines(draw_gt_quad_image,
                                   [np.array([xy_list[0], xy_list[1], shrink_long_edges_xy_list[1],
-                                            shrink_long_edges_xy_list[0]]).astype('int').reshape(-1, 1, 2)],
+                                             shrink_long_edges_xy_list[0]]).astype('int').reshape(-1, 1, 2)],
                                   True,
                                   (255, 255, 0), 2)
                     # 右端阴影
                     cv2.polylines(draw_gt_quad_image,
                                   [np.array([shrink_long_edges_xy_list[3], shrink_long_edges_xy_list[2],
-                                            xy_list[2], xy_list[3]]).astype('int').reshape(-1, 1, 2)],
+                                             xy_list[2], xy_list[3]]).astype('int').reshape(-1, 1, 2)],
                                   True,
                                   (255, 255, 0), 2)
         if config.SAVE_RESIZED_IMAGE:
-            current_image_filename = origin_image_filename
-            current_image_filepath = os.path.join(current_image_dir, current_image_filename)
-            # cv2.imwrite(current_image_filepath, image)
-        current_label_filename = origin_label_filename[:-4] + '.npy'
-        current_label_filepath = os.path.join(current_label_dir, current_label_filename)
-        np.save(current_label_filepath, xy_list_array)
-        if config.DRAW_GT_QUAD:
-            draw_gt_quad_image_filepath = os.path.join(draw_gt_quad_image_dir, current_image_filename)
-            cv2.namedWindow('draw_gt_quad_image', cv2.WINDOW_NORMAL)
-            cv2.imshow('draw_gt_quad_image', draw_gt_quad_image)
-            cv2.waitKey(0)
-            # cv2.imwrite(draw_gt_quad_image_filepath, draw_gt_quad_image)
-        train_val_set.append('{},{},{},{},{}\n'.format(current_image_filepath,
-                                                       list(origin_image.shape[:2]),
-                                                       list(image.shape[:2]),
-                                                       list(window),
-                                                       scale))
+            resized_image_filename = origin_image_filename
+            resized_image_filepath = os.path.join(resized_image_dir, resized_image_filename)
+            # cv2.namedWindow('resized_image', cv2.WINDOW_NORMAL)
+            # cv2.imshow('resized_image', image)
+            # cv2.waitKey(0)
+            cv2.imwrite(resized_image_filepath, image)
+        if config.SAVE_RESIZED_LABEL:
+            resized_label_filename = origin_label_filename[:-4] + '.npy'
+            resized_label_filepath = os.path.join(resized_label_dir, resized_label_filename)
+            np.save(resized_label_filepath, xy_list_array)
+        if config.SAVE_DRAW_GT_QUAD_IMAGE:
+            draw_gt_quad_image_filepath = os.path.join(draw_gt_quad_image_dir, origin_image_filename)
+            # cv2.namedWindow('draw_gt_quad_image', cv2.WINDOW_NORMAL)
+            # cv2.imshow('draw_gt_quad_image', draw_gt_quad_image)
+            # cv2.waitKey(0)
+            cv2.imwrite(draw_gt_quad_image_filepath, draw_gt_quad_image)
         logger.debug('Handling {} ends'.format(origin_image_filepath))
 
-    current_image_filenames = os.listdir(current_image_dir)
-    num_current_images = len(current_image_filenames)
-    print('Found {} current images.'.format(num_current_images))
-    current_label_filenames = os.listdir(current_label_dir)
-    num_current_labels = len(current_label_filenames)
-    print('Found {} current labels.'.format(num_current_labels))
-
-    random.shuffle(train_val_set)
-    val_count = int(config.VALIDATION_SPLIT_RATIO * len(train_val_set))
-    with open(os.path.join(dataset_dir, config.VAL_FILENAME), 'w') as val_file:
-        val_file.writelines(train_val_set[:val_count])
-    with open(os.path.join(dataset_dir, config.TRAIN_FILENAME), 'w') as train_file:
-        train_file.writelines(train_val_set[val_count:])
+    resized_image_filenames = os.listdir(resized_image_dir)
+    num_resized_images = len(resized_image_filenames)
+    logger.info('Found {} resized images.'.format(num_resized_images))
+    resized_label_filenames = os.listdir(resized_label_dir)
+    num_resized_labels = len(resized_label_filenames)
+    logger.info('Found {} resized labels.'.format(num_resized_labels))
+    num_train_images = int(config.VAL_SPLIT_RATIO * num_resized_images)
+    logger.debug('num_train_images={}'.format(num_train_images))
+    num_val_images = num_resized_images - num_train_images
+    logger.debug('num_val_images={}'.format(num_val_images))
+    for image_filename in resized_image_filenames[:num_train_images]:
+        train_image_filepath = osp.join(train_image_dir, image_filename)
+        resized_image_filepath = osp.join(resized_image_dir, image_filename)
+        shutil.copy(resized_image_filepath, train_image_filepath)
+    for image_filename in resized_image_filenames[num_train_images:]:
+        val_image_filepath = osp.join(val_image_dir, image_filename)
+        resized_image_filepath = osp.join(resized_image_dir, image_filename)
+        shutil.copy(resized_image_filepath, val_image_filepath)
+    logger.info('Found {} train images.'.format(len(os.listdir(train_image_dir))))
+    logger.info('Found {} val images.'.format(len(os.listdir(val_image_dir))))
 
 
 if __name__ == '__main__':
