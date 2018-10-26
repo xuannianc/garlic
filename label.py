@@ -1,8 +1,19 @@
 import numpy as np
 import os
-from PIL import Image, ImageDraw
 from tqdm import tqdm
 import config
+import logging
+import sys
+import cv2
+import os.path as osp
+import shutil
+
+logger = logging.getLogger('label')
+logger.setLevel(logging.DEBUG)  # default log level
+format = logging.Formatter("%(asctime)s %(name)-8s %(levelname)-8s %(lineno)-4d %(message)s")  # output format
+sh = logging.StreamHandler(stream=sys.stdout)  # output to standard output
+sh.setFormatter(format)
+logger.addHandler(sh)
 
 
 def point_inside_of_quad(px, py, quad_xy_list, p_min, p_max):
@@ -28,25 +39,72 @@ def point_inside_of_quad(px, py, quad_xy_list, p_min, p_max):
         return False
 
 
-def point_inside_of_nth_quad(px, py, xy_list, shrink_1ong_edges_, long_edge):
-    nth = -1
-    vs = [[[0, 0, 3, 3, 0], [1, 1, 2, 2, 1]],
-          [[0, 0, 1, 1, 0], [2, 2, 3, 3, 2]]]
-    for ith in range(2):
-        quad_xy_list = np.concatenate((
-            np.reshape(xy_list[vs[long_edge][ith][0]], (1, 2)),
-            np.reshape(shrink_1[vs[long_edge][ith][1]], (1, 2)),
-            np.reshape(shrink_1[vs[long_edge][ith][2]], (1, 2)),
-            np.reshape(xy_list[vs[long_edge][ith][3]], (1, 2))), axis=0)
-        p_min = np.amin(quad_xy_list, axis=0)
-        p_max = np.amax(quad_xy_list, axis=0)
-        if point_inside_of_quad(px, py, quad_xy_list, p_min, p_max):
-            if nth == -1:
-                nth = ith
+def point_inside_of_end_quads(center_x, center_y, xy_list, shrink_long_edges_xy_list, first_long_edge_idx):
+    """
+    判断中心点是否在两端的 quad 中
+    :param center_x:
+    :param center_y:
+    :param xy_list:
+    :param shrink_long_edges_xy_list:
+    :param first_long_edge_idx:
+    :return: 如果不在,返回 -1;如果在上端或者左端返回 0; 如果在下端或者右端返回 1
+    """
+    idx = -1
+    # 左右长上下短的情况
+    # ----------------
+    # |//////////////|
+    # ----------------
+    # |              |
+    # |              |
+    # |              |
+    # ----------------
+    # |//////////////|
+    # ----------------
+    if first_long_edge_idx == 0:
+        # 上端阴影
+        up_quad_xy_list = np.array([xy_list[0], shrink_long_edges_xy_list[0], shrink_long_edges_xy_list[3], xy_list[3]])
+        # 下端阴影
+        down_quad_xy_list = np.array(
+            [shrink_long_edges_xy_list[1], xy_list[1], xy_list[2], shrink_long_edges_xy_list[2]])
+        up_float_min_xy = np.amin(up_quad_xy_list, axis=0)
+        up_float_max_xy = np.amax(up_quad_xy_list, axis=0)
+        down_float_min_xy = np.amin(down_quad_xy_list, axis=0)
+        down_float_max_xy = np.amax(down_quad_xy_list, axis=0)
+        if point_inside_of_quad(center_x, center_y, up_quad_xy_list, up_float_min_xy, up_float_max_xy):
+            idx = 0
+        if point_inside_of_quad(center_x, center_y, down_quad_xy_list, down_float_min_xy, down_float_max_xy):
+            if idx == 0:
+                # logger.warning('center point in both end quads')
+                idx = -1
             else:
-                nth = -1
-                break
-    return nth
+                idx = 1
+    # 左右短上下长的情况
+    # --------------------------
+    # |///|                 |///|
+    # |///|                 |///|
+    # |///|                 |///|
+    # |///|                 |///|
+    # ---------------------------
+    elif first_long_edge_idx == 1:
+        # 左端阴影
+        left_quad_xy_list = np.array(
+            [xy_list[0], xy_list[1], shrink_long_edges_xy_list[1], shrink_long_edges_xy_list[0]])
+        # 右端阴影
+        right_quad_xy_list = np.array(
+            [shrink_long_edges_xy_list[3], shrink_long_edges_xy_list[2], xy_list[2], xy_list[3]])
+        left_float_min_xy = np.amin(left_quad_xy_list, axis=0)
+        left_float_max_xy = np.amax(left_quad_xy_list, axis=0)
+        right_float_min_xy = np.amin(right_quad_xy_list, axis=0)
+        right_float_max_xy = np.amax(right_quad_xy_list, axis=0)
+        if point_inside_of_quad(center_x, center_y, left_quad_xy_list, left_float_min_xy, left_float_max_xy):
+            idx = 0
+        if point_inside_of_quad(center_x, center_y, right_quad_xy_list, right_float_min_xy, right_float_max_xy):
+            if idx == 0:
+                # logger.warning('center point in both end quads')
+                idx = -1
+            else:
+                idx = 1
+    return idx
 
 
 def shrink(xy_list, shrink_ratio=config.SHRINK_RATIO):
@@ -135,20 +193,49 @@ def shrink_edge(xy_list, new_xy_list, edge_idx, r, theta, shrink_ratio=config.SH
     new_xy_list[end_vertex_idx, 1] += delta_y_sign * shrink_ratio * r[end_vertex_idx] * np.sin(theta[edge_idx])
 
 
-def process_label(dataset_dir=config.DATASET_DIR):
-    with open(os.path.join(dataset_dir, config.VAL_FILENAME), 'r') as val_file:
-        data_lines = val_file.readlines()
-    with open(os.path.join(dataset_dir, config.TRAIN_FILENAME), 'r') as train_file:
-        data_lines.extend(train_file.readlines())
-    for line, _ in zip(data_lines, tqdm(range(len(data_lines)))):
-        line_cols = str(line).strip().split(',')
-        img_name, width, height = line_cols[0].strip(), int(line_cols[1].strip()), int(line_cols[2].strip())
-        gt = np.zeros((height // config.pixel_size, width // config.pixel_size, 7))
-        train_label_dir = os.path.join(dataset_dir, config.train_label_dir_name)
-        xy_list_array = np.load(os.path.join(train_label_dir, img_name[:-4] + '.npy'))
-        train_image_dir = os.path.join(dataset_dir, config.train_image_dir_name)
-        with Image.open(os.path.join(train_image_dir, img_name)) as im:
-            draw = ImageDraw.Draw(im)
+def generate_label(dataset_dir=config.DATASET_DIR):
+    """
+    生成用于训练的 label
+    :param dataset_dir:
+    :return:
+    """
+    resized_label_dir = osp.join(dataset_dir, config.RESIZED_LABEL_DIR_NAME)
+    train_image_dir = osp.join(dataset_dir, config.TRAIN_IMAGE_DIR_NAME)
+    val_image_dir = osp.join(dataset_dir, config.VAL_IMAGE_DIR_NAME)
+    for dir_type, dir_path in zip(['resized_label_dir, train_image_dir, val_image_dir'],
+                                  [resized_label_dir, train_image_dir, val_image_dir]):
+        if not osp.exists(dir_path) or len(os.listdir(dir_path)) == 0:
+            logger.error('{}:{} does not exist or is empty'.format(dir_type, dir_path))
+            return
+    train_label_dir = osp.join(dataset_dir, config.TRAIN_LABEL_DIR_NAME)
+    val_label_dir = osp.join(dataset_dir, config.VAL_LABEL_DIR_NAME)
+    # 存放画有 act 的 resized_image
+    draw_act_image_dir = osp.join(dataset_dir, config.DRAW_ACT_IMAGE_DIR_NAME)
+    for dir_type, dir_path in zip(['train_label_dir', 'val_label_dir', 'draw_act_image_dir'],
+                                  [train_label_dir, val_label_dir, draw_act_image_dir]):
+        if not osp.exists(dir_path):
+            logger.info('{}:{} does not exist, then creating'.format(dir_type, dir_path))
+            os.mkdir(dir_path)
+        else:
+            logger.info('{}:{} already exists, then deleting and creating'.format(dir_type, dir_path))
+            shutil.rmtree(dir_path)
+            os.mkdir(dir_path)
+    image_dirs = [train_image_dir, val_image_dir]
+    label_dirs = [train_label_dir, val_label_dir]
+    for i, image_dir in enumerate(image_dirs):
+        image_filenames = os.listdir(image_dir)
+        num_images = len(image_filenames)
+        for image_filename, _ in zip(image_filenames, tqdm(range(num_images))):
+            image_filepath = osp.join(image_dirs[i], image_filename)
+            logger.debug('Handling {} starts'.format(image_filepath))
+            image = cv2.imread(image_filepath)
+            # cv2.namedWindow('origin_image', cv2.WINDOW_NORMAL)
+            # cv2.imshow('origin_image', image)
+            # cv2.waitKey(0)
+            height, width = image.shape[:2]
+            gt = np.zeros((height // config.PIXEL_SIZE, width // config.PIXEL_SIZE, 7))
+            xy_list_array = np.load(osp.join(resized_label_dir, image_filename[:-4] + '.npy'))
+            draw_act_image = image.copy()
             for xy_list in xy_list_array:
                 _, shrink_xy_list, _ = shrink(xy_list, config.SHRINK_RATIO)
                 shrink_long_edges_xy_list, _, first_long_edge_idx = shrink(xy_list, config.SHRINK_SIDE_RATIO)
@@ -170,9 +257,9 @@ def process_label(dataset_dir=config.DATASET_DIR):
                 int_max_x = np.minimum(width // config.PIXEL_SIZE, int_max_xy[0])
                 for y in range(int_min_y, int_max_y):
                     for x in range(int_min_x, int_max_x):
-                        # -------
-                        #|---x---|
-                        # -------
+                        #  -------
+                        # |---x---|
+                        #  -------
                         # PIXEL_SIZE * PIXEL_SIZE 矩形框中心点的坐标
                         center_x = (x + 0.5) * config.PIXEL_SIZE
                         center_y = (y + 0.5) * config.PIXEL_SIZE
@@ -180,36 +267,55 @@ def process_label(dataset_dir=config.DATASET_DIR):
                         if point_inside_of_quad(center_x, center_y, shrink_xy_list, float_min_xy, float_max_xy):
                             # 如果在,设置与矩形框对应的 gt 为 1
                             gt[y, x, 0] = 1
-                            line_width, line_color = 1, 'red'
+                            line_width, line_color = 1, (0, 0, 255)
                             # 判断中心点是否在收缩矩形框的两端
-                            ith = point_inside_of_nth_quad(center_x, center_y, xy_list, shrink_long_edges_xy_list, first_long_edge_idx)
-                            vs = [[[3, 0], [1, 2]], [[0, 1], [2, 3]]]
-                            if ith in range(2):
+                            idx = point_inside_of_end_quads(center_x, center_y, xy_list, shrink_long_edges_xy_list,
+                                                            first_long_edge_idx)
+                            if idx in range(2):
                                 gt[y, x, 1] = 1
-                                if ith == 0:
-                                    line_width, line_color = 2, 'yellow'
+                                # 首端
+                                if idx == 0:
+                                    line_width, line_color = 2, (0, 255, 255)
+                                    gt[y, x, 2] = idx
+                                    # 上端
+                                    if first_long_edge_idx == 0:
+                                        # 按照逆时针, 先右上再左上
+                                        gt[y, x, 3:5] = xy_list[3] - [center_x, center_y]
+                                        gt[y, x, 5:] = xy_list[0] - [center_x, center_y]
+                                    # 左端
+                                    else:
+                                        # 按照逆时针, 先左上后左下
+                                        gt[y, x, 3:5] = xy_list[0] - [center_x, center_y]
+                                        gt[y, x, 5:] = xy_list[1] - [center_x, center_y]
+                                # 尾端
                                 else:
-                                    line_width, line_color = 2, 'green'
-                                gt[y, x, 2:3] = ith
-                                gt[y, x, 3:5] = xy_list[vs[long_edge][ith][0]] - [center_x, center_y]
-                                gt[y, x, 5:] = xy_list[vs[long_edge][ith][1]] - [center_x, center_y]
-                            draw.line([(px - 0.5 * config.pixel_size,
-                                        py - 0.5 * config.pixel_size),
-                                       (px + 0.5 * config.pixel_size,
-                                        py - 0.5 * config.pixel_size),
-                                       (px + 0.5 * config.pixel_size,
-                                        py + 0.5 * config.pixel_size),
-                                       (px - 0.5 * config.pixel_size,
-                                        py + 0.5 * config.pixel_size),
-                                       (px - 0.5 * config.pixel_size,
-                                        py - 0.5 * config.pixel_size)],
-                                      width=line_width, fill=line_color)
-            act_image_dir = os.path.join(config.data_dir, config.show_act_image_dir_name)
-            if config.draw_act_quad:
-                im.save(os.path.join(act_image_dir, img_name))
-        train_label_dir = os.path.join(dataset_dir, config.train_label_dir_name)
-        np.save(os.path.join(train_label_dir, img_name[:-4] + '_gt.npy'), gt)
+                                    line_width, line_color = 2, (0, 255, 0)
+                                    gt[y, x, 2] = idx
+                                    # 下端
+                                    if first_long_edge_idx == 0:
+                                        # 按照逆时针, 先左下 (1) 后右下 (2)
+                                        gt[y, x, 3:5] = xy_list[1] - [center_x, center_y]
+                                        gt[y, x, 5:] = xy_list[2] - [center_x, center_y]
+                                    # 右端
+                                    else:
+                                        # 按照逆时针, 先右下 (2) 后右上 (3)
+                                        gt[y, x, 3:5] = xy_list[2] - [center_x, center_y]
+                                        gt[y, x, 5:] = xy_list[3] - [center_x, center_y]
+                            if config.DRAW_ACT:
+                                points_around_center = np.array([[center_x - 2, center_y - 2],
+                                                                 [center_x - 2, center_y + 2],
+                                                                 [center_x + 2, center_y + 2],
+                                                                 [center_x + 2, center_y - 2]]).astype('int')
+                                cv2.polylines(draw_act_image, [points_around_center.reshape(-1, 1, 2)], True,
+                                              line_color,
+                                              line_width)
+            # cv2.namedWindow('draw_act_image', cv2.WINDOW_NORMAL)
+            # cv2.imshow('draw_act_image', draw_act_image)
+            # cv2.waitKey(0)
+            cv2.imwrite(osp.join(draw_act_image_dir, image_filename), draw_act_image)
+            np.save(os.path.join(label_dirs[i], image_filename[:-4] + '_gt.npy'), gt)
+            logger.debug('Handling {} ends'.format(image_filepath))
 
 
 if __name__ == '__main__':
-    process_label()
+    generate_label()

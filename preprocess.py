@@ -62,7 +62,7 @@ def sort_xylist(xy_list):
         # 把有最小 x 的元素放在  sorted_xy_list 的下标 0 的位置
         sorted_xy_list[0] = xy_list[xmin1_idx]
         first_vertex_idx = xmin1_idx
-    ##################################### 找到第一个顶点的对角线的点　############################################
+    ##################################### 找到第 0 个顶点的对角线的点　############################################
     # connect the first point to the third point on the other side of
     # the line with the middle slope
     other_vertex_idxes = list(range(4))
@@ -100,29 +100,30 @@ def sort_xylist(xy_list):
         logger.warning('Cannot find second_vertex_idx')
         return np.zeros_like(xy_list)
     if fourth_vertex_idx is None:
-        logger.warning('Cannot find second_vertex_idx')
+        logger.warning('Cannot find fourth_vertex_idx')
         return np.zeros_like(xy_list)
     sorted_xy_list[1] = xy_list[second_vertex_idx]
     sorted_xy_list[3] = xy_list[fourth_vertex_idx]
     ############################### 把左上方的点作为第一个点,按逆时针得到其他点　######################################
-    # compare slope of 13 and 24, determine the final order
-    k13 = k_mid
-    k24 = (xy_list[second_vertex_idx, 1] - xy_list[fourth_vertex_idx, 1]) / (
+    # compare slope of 02 and 13, determine the final order
+    k02 = k_mid
+    k13 = (xy_list[second_vertex_idx, 1] - xy_list[fourth_vertex_idx, 1]) / (
             xy_list[second_vertex_idx, 0] - xy_list[fourth_vertex_idx, 0] + config.EPSILON)
-    if k13 < k24:
-        # 4_________3
-        # /        /
-        #/________/
-        #1         2
-        tmp_x, tmp_y = sorted_xy_list[0, 0], sorted_xy_list[0, 1]
-        #
-        for i in range(0, 2):
-            sorted_xy_list[i] = sorted_xy_list[i + 1]
-        sorted_xy_list[3, 0], sorted_xy_list[3, 1] = tmp_x, tmp_y
-        # 1_________4
-        # /        /
-        #/________/
-        #2         3
+    if k02 < k13:
+        #  3_________2
+        #  /        /
+        # /________/
+        # 0         1
+        # 调整 3->0,2->3,1->2,0->1
+        tmp_x, tmp_y = sorted_xy_list[3, 0], sorted_xy_list[3, 1]
+        for i in range(2, -1, -1):
+            sorted_xy_list[i + 1] = sorted_xy_list[i]
+        sorted_xy_list[0, 0], sorted_xy_list[0, 1] = tmp_x, tmp_y
+        # 调整后
+        #  0_________3
+        #  /        /
+        # /________/
+        # 1         2
     return sorted_xy_list
 
 
@@ -242,30 +243,58 @@ def resize_image(image, min_dim=None, max_dim=None, min_scale=None, mode="square
     return image.astype(image_dtype), window, scale, padding, crop
 
 
+def every_image_has_corresponding_label(image_dir, label_dir):
+    for image_filename in os.listdir(image_dir):
+        label_filename = image_filename[:-4] + '.npy'
+        label_filepath = osp.join(label_dir, label_filename)
+        if not osp.exists(label_filepath):
+            return False
+    image_filenames = os.listdir(image_dir)
+    num_images = len(image_filenames)
+    logger.info('Found {} images.'.format(num_images))
+    label_filenames = os.listdir(label_dir)
+    num_labels = len(label_filenames)
+    logger.info('Found {} labels.'.format(num_labels))
+    return True
+
+
 def preprocess():
     dataset_dir = config.DATASET_DIR
     # 存放原来的图片
     origin_image_dir = os.path.join(dataset_dir, config.ORIGIN_IMAGE_DIR_NAME)
     # 存放原来的 txt 标注
     origin_label_dir = os.path.join(dataset_dir, config.ORIGIN_LABEL_DIR_NAME)
-    # 存放 resize 后的图片
-    resized_image_dir = os.path.join(dataset_dir, config.RESIZED_IMAGE_DIR_NAME)
-    # 存放 resize 后的标注
-    resized_label_dir = os.path.join(dataset_dir, config.RESIZED_LABEL_DIR_NAME)
-    # 存放画有 gt quad 的 resized_image
-    draw_gt_quad_image_dir = os.path.join(dataset_dir, config.DRAW_GT_QUAD_IMAGE_DIR_NAME)
-    # 存放画有 act 的 resized_image
-    draw_act_image_dir = os.path.join(dataset_dir, config.DRAW_ACT_IMAGE_DIR_NAME)
-    # 存放用于训练的 image
-    train_image_dir = os.path.join(dataset_dir, config.TRAIN_IMAGE_DIR_NAME)
-    val_image_dir = os.path.join(dataset_dir, config.VAL_IMAGE_DIR_NAME)
-    for dir_path in [resized_image_dir, resized_label_dir, draw_gt_quad_image_dir, draw_act_image_dir, train_image_dir,
-                     val_image_dir]:
-        if not os.path.exists(dir_path):
-            os.mkdir(dir_path)
+    if config.SAVE_RESIZED_IMAGE:
+        # 存放 resize 后的图片
+        resized_image_dir = os.path.join(dataset_dir, config.RESIZED_IMAGE_DIR_NAME)
+        if not os.path.exists(resized_image_dir):
+            logger.info('resized_image_dir:{} does not exist, then creating'.format(resized_image_dir))
+            os.mkdir(resized_image_dir)
         else:
-            shutil.rmtree(dir_path)
-            os.mkdir(dir_path)
+            logger.info('resized_image_dir:{} already exists, then deleting and creating'.format(resized_image_dir))
+            shutil.rmtree(resized_image_dir)
+            os.mkdir(resized_image_dir)
+    if config.SAVE_RESIZED_LABEL:
+        # 存放 resize 后的标注
+        resized_label_dir = os.path.join(dataset_dir, config.RESIZED_LABEL_DIR_NAME)
+        if not os.path.exists(resized_label_dir):
+            logger.info('resized_label_dir:{} does not exist, then creating'.format(resized_label_dir))
+            os.mkdir(resized_label_dir)
+        else:
+            logger.info('resized_label_dir:{} already exists, then deleting and creating'.format(resized_label_dir))
+            shutil.rmtree(resized_label_dir)
+            os.mkdir(resized_label_dir)
+    if config.SAVE_DRAW_GT_QUAD_IMAGE:
+        # 存放画有 gt quad 的 resized_image
+        draw_gt_quad_image_dir = os.path.join(dataset_dir, config.DRAW_GT_QUAD_IMAGE_DIR_NAME)
+        if not os.path.exists(draw_gt_quad_image_dir):
+            logger.info('draw_gt_quad_image_dir:{} does not exist, then creating'.format(draw_gt_quad_image_dir))
+            os.mkdir(draw_gt_quad_image_dir)
+        else:
+            logger.info('draw_gt_quad_image_dir:{} already exists, then deleting and creating'.format(
+                draw_gt_quad_image_dir))
+            shutil.rmtree(draw_gt_quad_image_dir)
+            os.mkdir(draw_gt_quad_image_dir)
     origin_image_filenames = os.listdir(origin_image_dir)
     num_origin_images = len(origin_image_filenames)
     logger.info('Found {} origin images.'.format(num_origin_images))
@@ -375,26 +404,46 @@ def preprocess():
             cv2.imwrite(draw_gt_quad_image_filepath, draw_gt_quad_image)
         logger.debug('Handling {} ends'.format(origin_image_filepath))
 
-    resized_image_filenames = os.listdir(resized_image_dir)
-    num_resized_images = len(resized_image_filenames)
-    logger.info('Found {} resized images.'.format(num_resized_images))
-    resized_label_filenames = os.listdir(resized_label_dir)
-    num_resized_labels = len(resized_label_filenames)
-    logger.info('Found {} resized labels.'.format(num_resized_labels))
-    num_train_images = int(config.VAL_SPLIT_RATIO * num_resized_images)
-    logger.debug('num_train_images={}'.format(num_train_images))
-    num_val_images = num_resized_images - num_train_images
-    logger.debug('num_val_images={}'.format(num_val_images))
-    for image_filename in resized_image_filenames[:num_train_images]:
-        train_image_filepath = osp.join(train_image_dir, image_filename)
-        resized_image_filepath = osp.join(resized_image_dir, image_filename)
-        shutil.copy(resized_image_filepath, train_image_filepath)
-    for image_filename in resized_image_filenames[num_train_images:]:
-        val_image_filepath = osp.join(val_image_dir, image_filename)
-        resized_image_filepath = osp.join(resized_image_dir, image_filename)
-        shutil.copy(resized_image_filepath, val_image_filepath)
-    logger.info('Found {} train images.'.format(len(os.listdir(train_image_dir))))
-    logger.info('Found {} val images.'.format(len(os.listdir(val_image_dir))))
+    if config.SAVE_TRAIN_VAL_IMAGE:
+        resized_image_dir = osp.join(dataset_dir, config.RESIZED_IMAGE_DIR_NAME)
+        resized_label_dir = osp.join(dataset_dir, config.RESIZED_LABEL_DIR_NAME)
+        for dir_type, dir_path in zip(['resized_image_dir', 'resized_label_dir'], [resized_image_dir, resized_label_dir]):
+            if not osp.exists(dir_path) or len(os.listdir(dir_path)):
+                logger.error('{}:{} does not exist or is empty'.format(dir_type, dir_path))
+                return
+        if not every_image_has_corresponding_label(resized_image_dir, resized_label_dir):
+            logger.error('Files in resized_image_dir does not match files in resized_label_dir')
+            return
+        resized_image_filenames = os.listdir(resized_image_dir)
+        num_resized_images = len(resized_image_filenames)
+        # 存放用于 train 的 image
+        train_image_dir = os.path.join(dataset_dir, config.TRAIN_IMAGE_DIR_NAME)
+        # 存放用于 validation 的 image
+        val_image_dir = os.path.join(dataset_dir, config.VAL_IMAGE_DIR_NAME)
+        for dir_type, dir_path in zip(
+                ['train_image_dir', 'val_image_dir'],
+                [train_image_dir, val_image_dir]):
+            if not os.path.exists(dir_path):
+                logger.info('{}:{} does not exist, then creating'.format(dir_type, dir_path))
+                os.mkdir(dir_path)
+            else:
+                logger.info('{}:{} already exists, then deleting and creating'.format(dir_type, dir_path))
+                shutil.rmtree(dir_path)
+                os.mkdir(dir_path)
+        num_val_images = int(config.VAL_SPLIT_RATIO * num_resized_images)
+        logger.debug('Expecting {} val images'.format(num_val_images))
+        num_train_images = num_resized_images - num_val_images
+        logger.debug('Expecting {} train images'.format(num_train_images))
+        for image_filename in resized_image_filenames[:num_train_images]:
+            train_image_filepath = osp.join(train_image_dir, image_filename)
+            resized_image_filepath = osp.join(resized_image_dir, image_filename)
+            shutil.copy(resized_image_filepath, train_image_filepath)
+        for image_filename in resized_image_filenames[num_train_images:]:
+            val_image_filepath = osp.join(val_image_dir, image_filename)
+            resized_image_filepath = osp.join(resized_image_dir, image_filename)
+            shutil.copy(resized_image_filepath, val_image_filepath)
+        logger.info('Found {} train images.'.format(len(os.listdir(train_image_dir))))
+        logger.info('Found {} val images.'.format(len(os.listdir(val_image_dir))))
 
 
 if __name__ == '__main__':
