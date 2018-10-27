@@ -8,9 +8,10 @@ decay = 5e-4
 # clipvalue = 0.5  # default 0.5, 0 means no clip
 patience = 5
 load_weights = False
-lambda_inside_score_loss = 4.0
-lambda_side_vertex_code_loss = 1.0
-lambda_side_vertex_coord_loss = 1.0
+# loss 的权重
+LAMBDA_INSIDE_SHRINK_QUAD_SCORE_LOSS = 4.0
+LAMBDA_INSIDE_END_QUADS_SCORE_LOSS = 1.0
+LAMBDA_VERTICES_COORD_LOSS = 1.0
 
 total_img = 10000
 VAL_SPLIT_RATIO = 0.3
@@ -39,14 +40,10 @@ SHRINK_RATIO = 0.2
 # pixels between 0.2 and 0.6 are side pixels
 SHRINK_SIDE_RATIO = 0.6
 EPSILON = 1e-7
-
-num_channels = 3
-feature_layers_range = range(5, 1, -1)
-# feature_layers_range = range(3, 0, -1)
-feature_layers_num = len(feature_layers_range)
-# pixel_size = 4
-PIXEL_SIZE = 2 ** feature_layers_range[-1]
-locked_layers = False
+FEATURE_LAYERS_RANGE = [4, 3, 2, 1]
+# vgg block2_pool 的输出就是 f4, 每个像素相当于原来的 4 个像素
+PIXEL_SIZE = 2 ** 2
+LOCK_LAYERS = False
 
 model_weights_path = 'model/weights_%s.{epoch:03d}-{val_loss:.3f}.h5' \
                      % train_task_id
