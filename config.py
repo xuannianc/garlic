@@ -13,34 +13,27 @@ lambda_side_vertex_code_loss = 1.0
 lambda_side_vertex_coord_loss = 1.0
 
 total_img = 10000
-VALIDATION_SPLIT_RATIO = 0.1
-max_train_img_size = int(train_task_id[-3:])
-max_predict_img_size = int(train_task_id[-3:])  # 2400
-assert max_train_img_size in [256, 384, 512, 640, 736], \
-    'max_train_img_size must in [256, 384, 512, 640, 736]'
-if max_train_img_size == 256:
-    batch_size = 8
-elif max_train_img_size == 384:
-    batch_size = 4
-elif max_train_img_size == 512:
-    batch_size = 2
-else:
-    batch_size = 1
-steps_per_epoch = total_img * (1 - VALIDATION_SPLIT_RATIO) // batch_size
-validation_steps = total_img * VALIDATION_SPLIT_RATIO // batch_size
-
+VAL_SPLIT_RATIO = 0.3
+BATCH_SIZE = 20
 DATASET_DIR = '/home/adam/.keras/datasets/text_detection/ICPR'
 ORIGIN_IMAGE_DIR_NAME = 'image_10000'
 ORIGIN_LABEL_DIR_NAME = 'txt_10000'
-CURRENT_IMAGE_DIR_NAME = 'images_%s' % train_task_id
-CURRENT_LABEL_DIR_NAME = 'labels_%s' % train_task_id
-DRAW_GT_QUAD_IMAGE_DIR_NAME = 'draw_gt_quad_images_%s' % train_task_id
-DRAW_ACT_IMAGE_DIR_NAME = 'draw_act_images_%s' % train_task_id
-SAVE_RESIZED_IMAGE = True
-DRAW_GT_QUAD = True
-draw_act_quad = True
-VAL_FILENAME = 'val_%s.txt' % train_task_id
-TRAIN_FILENAME = 'train_%s.txt' % train_task_id
+RESIZED_IMAGE_DIR_NAME = 'resized_images'
+# .npy 的文件
+RESIZED_LABEL_DIR_NAME = 'resized_labels'
+# train_image 是 resized_images 是 0.7
+TRAIN_IMAGE_DIR_NAME = 'train_images'
+TRAIN_LABEL_DIR_NAME = 'train_labels'
+VAL_IMAGE_DIR_NAME = 'val_images'
+VAL_LABEL_DIR_NAME = 'val_labels'
+DRAW_GT_QUAD_IMAGE_DIR_NAME = 'draw_gt_quad_images'
+DRAW_ACT_IMAGE_DIR_NAME = 'draw_act_images'
+SAVE_RESIZED_IMAGE = False
+SAVE_RESIZED_LABEL = True
+SAVE_TRAIN_VAL_IMAGE = False
+SAVE_DRAW_GT_QUAD_IMAGE = False
+DRAW_GT_QUAD = False
+DRAW_ACT = True
 # in paper it's 0.3, maybe too large to this problem
 SHRINK_RATIO = 0.2
 # pixels between 0.2 and 0.6 are side pixels
@@ -55,15 +48,10 @@ feature_layers_num = len(feature_layers_range)
 PIXEL_SIZE = 2 ** feature_layers_range[-1]
 locked_layers = False
 
-if not os.path.exists('model'):
-    os.mkdir('model')
-if not os.path.exists('saved_model'):
-    os.mkdir('saved_model')
-
 model_weights_path = 'model/weights_%s.{epoch:03d}-{val_loss:.3f}.h5' \
                      % train_task_id
 saved_model_file_path = 'saved_model/east_model_%s.h5' % train_task_id
-saved_model_weights_file_path = 'saved_model/east_model_weights_%s.h5'\
+saved_model_weights_file_path = 'saved_model/east_model_weights_%s.h5' \
                                 % train_task_id
 
 pixel_threshold = 0.9
