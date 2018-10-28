@@ -4,16 +4,20 @@ from data.hdf5 import HDF5DatasetGenerator
 from callbacks import *
 from keras import callbacks
 from losses import loss
+from keras.models import load_model
 
 opt = SGD(lr=0.01, decay=1e-6, momentum=0.9, nesterov=True, clipnorm=5)
 east = East()
-model = east.build()
-model.compile(loss=loss, optimizer=opt)
-
+# model = east.build()
+# model.compile(loss=loss, optimizer=opt)
+model = load_model('saved_models/east_1027_7900_1976_6.5662_7.1822.hdf5', custom_objects={'loss': loss})
+print('old__lr={}'.format(K.get_value(model.optimizer.lr)))
+K.set_value(model.optimizer.lr, 0.001)
+print('new__lr={}'.format(K.get_value(model.optimizer.lr)))
 # callbacks
 training_monitor = TrainingMonitor(figure_path='east_7900_1976.jpg',
                                    json_path='east_7900_1976.json',
-                                   start_at=0)
+                                   start_at=7)
 # accuracy_evaluator = AccuracyEvaluator(TEST_DB_PATH, batch_size=100)
 # learning_rate_updator = LearningRateUpdator(init_lr=0.001)
 callbacks = [
