@@ -28,7 +28,7 @@ callbacks = [
     # Saves the current weights after every epoch
     callbacks.ModelCheckpoint(
         # Path to the destination model file
-        filepath='models/east_1027_7900_1976.hdf5',
+        filepath='saved_models/east_1027_7900_1976.hdf5',
         # These two arguments mean you won’t overwrite the
         # model file unless val_loss has improved, which allows
         # you to keep the best model seen during training.

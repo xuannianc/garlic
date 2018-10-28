@@ -21,7 +21,7 @@ def loss(y_true, y_pred):
     # log +epsilon for stable cal
     inside_shrink_quad_score_loss = tf.reduce_mean(
         -1 * (beta1 * labels1 * tf.log(predicts1 + config.EPSILON) +
-              (1 - beta1) * (1 - labels1) * tf.log(1 - predicts1 + config.EPSILON)))
+              -1 * (1 - beta1) * (1 - labels1) * tf.log(1 - predicts1 + config.EPSILON)))
     inside_shrink_quad_score_loss *= config.LAMBDA_INSIDE_SHRINK_QUAD_SCORE_LOSS
 
     ######################################## inside_end_quad_score_loss ################################
@@ -32,7 +32,7 @@ def loss(y_true, y_pred):
     # 在 shrink quad 但是不在 end quads 的比例
     beta2 = 1 - (tf.reduce_mean(labels2[:, :, :, 1]) / (tf.reduce_mean(labels1) + config.EPSILON))
     pos = -1 * beta2 * labels2 * tf.log(predicts2 + config.EPSILON)
-    neg = (1 - beta2) * (1 - labels2) * tf.log(1 - predicts2 + config.EPSILON)
+    neg = -1 * (1 - beta2) * (1 - labels2) * tf.log(1 - predicts2 + config.EPSILON)
     inside_shrink_quad_mask = tf.cast(tf.equal(y_true[:, :, :, 0], 1), tf.float32)
     inside_end_quads_score_loss_part1 = \
         tf.reduce_sum(tf.reduce_sum(pos + neg, axis=-1) * inside_shrink_quad_mask) / (
