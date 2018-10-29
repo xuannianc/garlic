@@ -105,3 +105,4 @@ venv.bak/
 .idea/
 *.hdf5
 *.h5
+output/

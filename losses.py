@@ -34,17 +34,17 @@ def loss(y_true, y_pred):
     predicts2 = tf.nn.sigmoid(logits2)
     # 预测是否在 end quad 的 loss
     # 在 shrink quad 但是不在 end quads 的比例
-    beta2 = 1 - (tf.reduce_mean(y_true[:, :, :, 1]) / (tf.reduce_mean(labels1) + config.EPSILON))
-    pos = -1 * beta2 * labels2 * tf.log(predicts2 + config.EPSILON)
-    neg = -1 * (1 - beta2) * (1 - labels2) * tf.log(1 - predicts2 + config.EPSILON)
-    inside_shrink_quad_mask = tf.cast(tf.equal(y_true[:, :, :, 0], 1), tf.float32)
+    beta2 = 1 - (tf.reduce_mean(labels2[:, :, :, 0]) / (tf.reduce_mean(labels1) + config.EPSILON))
+    pos = -1 * beta2 * labels2[:, :, :, 0] * tf.log(predicts2[:, :, :, 0] + config.EPSILON)
+    neg = -1 * (1 - beta2) * (1 - labels2[:, :, :, 0]) * tf.log(1 - predicts2[:, :, :, 0] + config.EPSILON)
+    inside_shrink_quad_mask = tf.cast(tf.equal(labels1, 1), tf.float32)
     inside_end_quads_score_loss_part1 = \
         tf.reduce_sum(tf.reduce_sum(pos + neg, axis=-1) * inside_shrink_quad_mask) / (
                 tf.reduce_sum(inside_shrink_quad_mask) + config.EPSILON)
     # 预测是哪一个 end quad 的 loss
-    inside_end_quads_mask = tf.cast(tf.equal(y_true[:, :, :, 1], 1), tf.float32)
+    inside_end_quads_mask = tf.cast(tf.equal(labels2[:, :, :, 0], 1), tf.float32)
     inside_end_quads_score_loss_part2 = K.sum(
-        inside_end_quads_mask * K.binary_crossentropy(y_true[:, :, :, 2], y_pred[:, :, :, 2])) / K.sum(
+        inside_end_quads_mask * K.binary_crossentropy(labels2[:, :, :, 1], predicts2[:, :, :, 1])) / K.sum(
         inside_end_quads_mask + config.EPSILON)
     inside_end_quads_score_loss = inside_end_quads_score_loss_part1 + inside_end_quads_score_loss_part2
     inside_end_quads_score_loss *= config.LAMBDA_INSIDE_END_QUADS_SCORE_LOSS
