@@ -6,13 +6,17 @@ from keras import backend as K
 def loss(y_true, y_pred):
     """
     loss for inside_shrink_quad_score, inside_end_quads_score, vertices_coord
-    :param y_true:
+    :param y_true: (batch_size, 256, 256, 7), 7 个元素分别表示
+        1. 是否在 shrink_quad 中
+        2. 是否在 end_quad 中
+        3. 在哪个 end_quad 中
+        4. 对应 end_quad 的两个顶点的坐标
     :param y_pred:
     :return:
     """
     ######################################## inside_shrink_quad_score_loss #############################
-    labels1 = y_true[:, :, :, :1]
-    logits1 = y_pred[:, :, :, :1]
+    labels1 = y_true[:, :, :, 0]
+    logits1 = y_pred[:, :, :, 0]
     # apply sigmoid activation
     predicts1 = tf.nn.sigmoid(logits1)
     # balance positive and negative samples in an image
@@ -30,7 +34,7 @@ def loss(y_true, y_pred):
     predicts2 = tf.nn.sigmoid(logits2)
     # 预测是否在 end quad 的 loss
     # 在 shrink quad 但是不在 end quads 的比例
-    beta2 = 1 - (tf.reduce_mean(labels2[:, :, :, 1]) / (tf.reduce_mean(labels1) + config.EPSILON))
+    beta2 = 1 - (tf.reduce_mean(y_true[:, :, :, 1]) / (tf.reduce_mean(labels1) + config.EPSILON))
     pos = -1 * beta2 * labels2 * tf.log(predicts2 + config.EPSILON)
     neg = -1 * (1 - beta2) * (1 - labels2) * tf.log(1 - predicts2 + config.EPSILON)
     inside_shrink_quad_mask = tf.cast(tf.equal(y_true[:, :, :, 0], 1), tf.float32)
