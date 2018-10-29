@@ -12,21 +12,21 @@ sh = logging.StreamHandler(stream=sys.stdout)  # output to standard output
 sh.setFormatter(format)
 logger.addHandler(sh)
 
+RESIZED_IMAGE_DIR = '/home/adam/.keras/datasets/text_detection/ICPR/resized_images'
 TRAIN_IMAGE_DIR = '/home/adam/.keras/datasets/text_detection/ICPR/train_images'
 VAL_IMAGE_DIR = '/home/adam/.keras/datasets/text_detection/ICPR/val_images'
 
 
-def copy_val_to_train(num_files):
-    val_image_filenames = os.listdir(VAL_IMAGE_DIR)
+def copy(num_files, src_dir, target_dir):
+    logger.info('Before copying: num_images={}'.format(len(os.listdir(target_dir))))
+    image_filenames = os.listdir(src_dir)
     # random.shuffle 会对原数组进行修改
-    random.shuffle(val_image_filenames)
-    to_copy_files = val_image_filenames[:num_files]
+    random.shuffle(image_filenames)
+    to_copy_files = image_filenames[:num_files]
     for file in to_copy_files:
-        shutil.move(osp.join(VAL_IMAGE_DIR, file), osp.join(TRAIN_IMAGE_DIR, file))
+        shutil.copy(osp.join(src_dir, file), osp.join(target_dir, file))
+    logger.info('After copying: num_images={}'.format(len(os.listdir(target_dir))))
 
 
-logger.info('Before copying: num_val_images={}'.format(len(os.listdir(VAL_IMAGE_DIR))))
-logger.info('Before copying: num_train_images={}'.format(len(os.listdir(TRAIN_IMAGE_DIR))))
-copy_val_to_train(4928)
-logger.info('After copying: num_val_images={}'.format(len(os.listdir(VAL_IMAGE_DIR))))
-logger.info('After copying: num_train_images={}'.format(len(os.listdir(TRAIN_IMAGE_DIR))))
+copy(7900, RESIZED_IMAGE_DIR, TRAIN_IMAGE_DIR)
+copy(1976, RESIZED_IMAGE_DIR, VAL_IMAGE_DIR)

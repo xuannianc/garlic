@@ -408,7 +408,7 @@ def preprocess():
         resized_image_dir = osp.join(dataset_dir, config.RESIZED_IMAGE_DIR_NAME)
         resized_label_dir = osp.join(dataset_dir, config.RESIZED_LABEL_DIR_NAME)
         for dir_type, dir_path in zip(['resized_image_dir', 'resized_label_dir'], [resized_image_dir, resized_label_dir]):
-            if not osp.exists(dir_path) or len(os.listdir(dir_path)):
+            if not osp.exists(dir_path) or len(os.listdir(dir_path)) == 0:
                 logger.error('{}:{} does not exist or is empty'.format(dir_type, dir_path))
                 return
         if not every_image_has_corresponding_label(resized_image_dir, resized_label_dir):
