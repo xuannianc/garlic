@@ -39,7 +39,7 @@ def loss(y_true, y_pred):
     neg = -1 * (1 - beta2) * (1 - labels2[:, :, :, 0]) * tf.log(1 - predicts2[:, :, :, 0] + config.EPSILON)
     inside_shrink_quad_mask = tf.cast(tf.equal(labels1, 1), tf.float32)
     inside_end_quads_score_loss_part1 = \
-        tf.reduce_sum(tf.reduce_sum(pos + neg) * inside_shrink_quad_mask) / (
+        tf.reduce_sum((pos + neg) * inside_shrink_quad_mask) / (
                 tf.reduce_sum(inside_shrink_quad_mask) + config.EPSILON)
     # 预测是哪一个 end quad 的 loss
     inside_end_quads_mask = tf.cast(tf.equal(labels2[:, :, :, 0], 1), tf.float32)
