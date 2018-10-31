@@ -70,7 +70,28 @@ def smooth_l1_loss(y_true, y_pred, mask=None):
     # (256, 256, 4)
     loss = (less_than_one * 0.5 * diff ** 2) + (1 - less_than_one) * (diff - 0.5)
     # (256, 256)
-    loss = K.mean(loss, axis=-1)
+    loss = K.sum(loss, axis=-1) / vertices_distance(y_true)
+    # loss = K.mean(loss, axis=-1)
     if mask is not None:
         loss = mask * loss
     return loss
+
+
+def vertices_distance(y_true):
+    # (256, 256, 4)
+    shape = tf.shape(y_true)
+    # (256 * 256, 2, 2)
+    xy_matrix = tf.reshape(y_true, [-1, 2, 2])
+    # (256 * 256, 2)
+    # 第二维为 (x1 - x2, y1 - y2)
+    diff = xy_matrix[:, 0, :] - xy_matrix[:, 1, :]
+    # (256 * 256, 2)
+    # 第二维为 ((x1 - x2)^2, (y1 - y2)^2)
+    square = tf.square(diff)
+    # (256 * 256, 1)
+    # 第二维为 (sqrt((x1 - x2)^2 + (y1 - y2)^2))
+    distance = tf.sqrt(tf.reduce_sum(square, axis=-1))
+    distance *= 4.0
+    distance += config.EPSILON
+    # (256, 256)
+    return tf.reshape(distance, shape[:-1])
