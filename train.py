@@ -9,16 +9,16 @@ from matplotlib import pyplot as plt
 
 opt = SGD(lr=0.01, decay=1e-6, momentum=0.9, nesterov=True, clipnorm=5)
 east = East()
-# model = east.build()
-# model.compile(loss=loss, optimizer=opt)
-model = load_model('saved_models/east_1027_7900_1976_6.5662_7.1822.hdf5', custom_objects={'loss': loss})
-print('old__lr={}'.format(K.get_value(model.optimizer.lr)))
-K.set_value(model.optimizer.lr, 0.001)
-print('new__lr={}'.format(K.get_value(model.optimizer.lr)))
+model = east.build()
+model.compile(loss=loss, optimizer=opt)
+# model = load_model('saved_models/east_1027_7900_1976_6.5662_7.1822.hdf5', custom_objects={'loss': loss})
+# print('old__lr={}'.format(K.get_value(model.optimizer.lr)))
+# K.set_value(model.optimizer.lr, 0.001)
+# print('new__lr={}'.format(K.get_value(model.optimizer.lr)))
 # callbacks
 training_monitor = TrainingMonitor(figure_path='output/east_7900_1976.jpg',
                                    json_path='output/east_7900_1976.json',
-                                   start_at=7)
+                                   start_at=0)
 # accuracy_evaluator = AccuracyEvaluator(TEST_DB_PATH, batch_size=100)
 # learning_rate_updator = LearningRateUpdator(init_lr=0.001)
 callbacks = [
@@ -33,7 +33,7 @@ callbacks = [
     # Saves the current weights after every epoch
     callbacks.ModelCheckpoint(
         # Path to the destination model file
-        filepath='saved_models/east_1027_7900_1976.hdf5',
+        filepath='saved_models/east_1031_7900_1976_{epoch:03d}_{loss:.4f}_{val_loss:.4f}.hdf5',
         # These two arguments mean you won’t overwrite the
         # model file unless val_loss has improved, which allows
         # you to keep the best model seen during training.
